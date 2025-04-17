@@ -15,7 +15,12 @@
 # SBATCH --mail-user=yasin_sonmez@berkeley.edu
 
 # minari
-python train.py --dataset "mujoco/hopper/expert-v0"
+# python train.py --dataset "mujoco/hopper/expert-v0"
 
 # D4RL
-# python train.py --dataset "hopper-expert-v2"
+python train.py --algo "bcsac" --dataset "hopper-medium-v0" &
+# python train.py --algo "td3bc" --dataset "hopper-medium-v0" &
+# python train.py --algo "bcsac" --dataset "hopper-medium-v0" &
+# python train.py --algo "td3bc" --dataset "hopper-medium-v0" &
+
+wait
