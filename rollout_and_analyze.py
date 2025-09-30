@@ -25,7 +25,12 @@ def _quat_wxyz_to_yaw(quat_wxyz: np.ndarray) -> float:
 
     Uses 2*atan2(z, w) which matches the approximation used in graph.py.
     """
-    w, x, y, z = float(quat_wxyz[0]), float(quat_wxyz[1]), float(quat_wxyz[2]), float(quat_wxyz[3])
+    w, x, y, z = (
+        float(quat_wxyz[0]),
+        float(quat_wxyz[1]),
+        float(quat_wxyz[2]),
+        float(quat_wxyz[3]),
+    )
     return float(2.0 * np.arctan2(z, w))
 
 
@@ -51,7 +56,9 @@ def _extract_quat_from_obs_or_env(obs: np.ndarray, env) -> np.ndarray:
     return np.asarray([1.0, 0.0, 0.0, 0.0], dtype=float)
 
 
-def _make_plots(xs: np.ndarray, ds: np.ndarray, fails: np.ndarray, turns: np.ndarray, out_dir: Path) -> None:
+def _make_plots(
+    xs: np.ndarray, ds: np.ndarray, fails: np.ndarray, turns: np.ndarray, out_dir: Path
+) -> None:
     def sliding_window(x, y, window):
         smoothed = []
         for xi in x:
@@ -61,7 +68,13 @@ def _make_plots(xs: np.ndarray, ds: np.ndarray, fails: np.ndarray, turns: np.nda
 
     xticks = [-np.pi / 2, -np.pi / 4, 0, np.pi / 4, np.pi / 2]
     # Use valid mathtext strings (single backslashes)
-    xticklabels = [r"$-\frac{\pi}{2}$", r"$-\frac{\pi}{4}$", r"$0$", r"$\frac{\pi}{4}$", r"$\frac{\pi}{2}$"]
+    xticklabels = [
+        r"$-\frac{\pi}{2}$",
+        r"$-\frac{\pi}{4}$",
+        r"$0$",
+        r"$\frac{\pi}{4}$",
+        r"$\frac{\pi}{2}$",
+    ]
 
     plt.figure()
     plt.scatter(xs, sliding_window(xs, ds, 0.1))
@@ -115,7 +128,9 @@ def rollout_and_analyze(
     policy = d3rlpy.load_learnable(policy_path)
 
     env_kwargs = {}
-    if use_ant_xml and ("ant" in env_name.lower() or env_name.lower().startswith("mujoco/ant")):
+    if use_ant_xml and (
+        "ant" in env_name.lower() or env_name.lower().startswith("mujoco/ant")
+    ):
         xml = ant_xml()
         env_kwargs["xml_file"] = xml
     # Ensure reset is deterministic when we control yaw
@@ -155,8 +170,6 @@ def rollout_and_analyze(
         terminated_flag = False
 
         # Track metrics across steps
-        exceeded = False
-        fail = False
         yaw_series = []
 
         # Initial yaw
@@ -178,10 +191,6 @@ def rollout_and_analyze(
 
             # Metrics
             x_pos = info.get("x_position")
-            if x_pos is not None and float(x_pos) > float(distance_threshold):
-                exceeded = True
-            if term and t < (max_steps - 1):
-                fail = True
 
             act_list.append(np.asarray(action))
             rew_list.append(np.asarray([reward], dtype=np.float32))
@@ -200,16 +209,22 @@ def rollout_and_analyze(
             final_mean_yaw = float(np.mean(yaw_series[-k:]))
         turns_optimally = (final_mean_yaw * initial_yaw) >= 0.0
 
+        observations = np.asarray(obs_list)
+        rewards = np.asarray(rew_list, dtype=np.float32)
+
+        fail = np.any(observations[:, 0] < 0.2)
+        exceeds = rewards.sum() > 2000.0
+
         episode = Episode(
-            observations=np.asarray(obs_list),
+            observations=observations,
             actions=np.asarray(act_list),
-            rewards=np.asarray(rew_list, dtype=np.float32),
+            rewards=rewards,
             terminated=terminated_flag,
         )
         collected_episodes.append(episode)
 
         # Append metrics
-        ds.append(bool(exceeded))
+        ds.append(bool(exceeds))
         fails.append(bool(fail))
         turns.append(bool(turns_optimally))
         initial_yaws.append(float(initial_yaw))
@@ -235,7 +250,9 @@ def rollout_and_analyze(
         "env": env.unwrapped.spec.id,
         "num_episodes": int(num_episodes),
     }
-    with open(out_dir / f"metrics_{env.unwrapped.spec.id}_{num_episodes}.pkl", "wb") as f:
+    with open(
+        out_dir / f"metrics_{env.unwrapped.spec.id}_{num_episodes}.pkl", "wb"
+    ) as f:
         pickle.dump(metrics, f)
 
     # Save plots
@@ -252,7 +269,9 @@ def rollout_and_analyze(
 
         # Create a rendering env (separate, rgb_array)
         render_env = gym.make(env_name, render_mode="rgb_array", **env_kwargs)
-        video_path = out_dir / f"grid_rollouts_{env.unwrapped.spec.id}_{num_episodes}.mp4"
+        video_path = (
+            out_dir / f"grid_rollouts_{env.unwrapped.spec.id}_{num_episodes}.mp4"
+        )
         render_episodes_grid_video(
             rows,
             render_env,
@@ -269,14 +288,34 @@ def rollout_and_analyze(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Rollout a policy, analyze, and save artifacts next to the policy.")
-    parser.add_argument("--policy-path", type=str, required=True, help="Path to saved d3rlpy learnable (.d3)")
+    parser = argparse.ArgumentParser(
+        description="Rollout a policy, analyze, and save artifacts next to the policy."
+    )
+    parser.add_argument(
+        "--policy-path",
+        type=str,
+        required=True,
+        help="Path to saved d3rlpy learnable (.d3)",
+    )
     parser.add_argument("--env", type=str, default="Ant-v5", help="Environment ID")
-    parser.add_argument("--num-episodes", type=int, default=100, help="Number of episodes to rollout")
-    parser.add_argument("--max-steps", type=int, default=1000, help="Max steps per episode")
-    parser.add_argument("--distance-threshold", type=float, default=100.0, help="X position threshold for success")
-    parser.add_argument("--deterministic", action="store_true", help="Use greedy actions (predict)")
-    parser.add_argument("--use-ant-xml", action="store_true", help="Use recolored Ant XML")
+    parser.add_argument(
+        "--num-episodes", type=int, default=100, help="Number of episodes to rollout"
+    )
+    parser.add_argument(
+        "--max-steps", type=int, default=1000, help="Max steps per episode"
+    )
+    parser.add_argument(
+        "--distance-threshold",
+        type=float,
+        default=100.0,
+        help="X position threshold for success",
+    )
+    parser.add_argument(
+        "--deterministic", action="store_true", help="Use greedy actions (predict)"
+    )
+    parser.add_argument(
+        "--use-ant-xml", action="store_true", help="Use recolored Ant XML"
+    )
 
     args = parser.parse_args()
 
@@ -293,5 +332,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
