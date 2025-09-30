@@ -1,3 +1,4 @@
 d3rlpy_logs
 wandb
 *.out
+*.png

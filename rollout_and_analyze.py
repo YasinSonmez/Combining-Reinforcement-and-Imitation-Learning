@@ -1,21 +1,22 @@
-import os
 import argparse
+import os
 import pickle
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+from tqdm import tqdm
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import gymnasium as gym
 import d3rlpy
+import gymnasium as gym
+import matplotlib.pyplot as plt
 
 # Import helpers from the sibling file in the same directory
 from record_replay_buffer_videos import (
+    _batch_observation,
     _set_ant_yaw_init_qpos,
     ant_xml,
-    _batch_observation,
     render_episodes_grid_video,
 )
 
@@ -56,8 +57,34 @@ def _extract_quat_from_obs_or_env(obs: np.ndarray, env) -> np.ndarray:
     return np.asarray([1.0, 0.0, 0.0, 0.0], dtype=float)
 
 
+def _make_initial_yaw_dist(xs, out_dir):
+    xticks = [-np.pi / 2, -np.pi / 4, 0, np.pi / 4, np.pi / 2]
+    # Use valid mathtext strings (single backslashes)
+    xticklabels = [
+        r"$-\frac{\pi}{2}$",
+        r"$-\frac{\pi}{4}$",
+        r"$0$",
+        r"$\frac{\pi}{4}$",
+        r"$\frac{\pi}{2}$",
+    ]
+
+    plt.figure()
+    plt.hist(xs)
+    plt.ylabel("Count")
+    plt.xlabel("Initial Orientation (rad)")
+    plt.xticks(xticks, xticklabels)
+    plt.tight_layout()
+    plt.savefig(out_dir / "initial.png", dpi=150)
+    plt.close()
+
+
 def _make_plots(
-    xs: np.ndarray, ds: np.ndarray, fails: np.ndarray, turns: np.ndarray, out_dir: Path
+    xs: np.ndarray,
+    ds: np.ndarray,
+    fails: np.ndarray,
+    turns: np.ndarray,
+    overturn: np.ndarray,
+    out_dir: Path,
 ) -> None:
     def sliding_window(x, y, window):
         smoothed = []
@@ -95,6 +122,15 @@ def _make_plots(
     plt.close()
 
     plt.figure()
+    plt.scatter(xs, sliding_window(xs, overturn, 0.1))
+    plt.ylabel("Turned too much (density, per rad)")
+    plt.xlabel("Initial Orientation (rad)")
+    plt.xticks(xticks, xticklabels)
+    plt.tight_layout()
+    plt.savefig(out_dir / "plot_overturn.png", dpi=150)
+    plt.close()
+
+    plt.figure()
     plt.scatter(xs, sliding_window(xs, fails, 0.1))
     plt.ylabel("Failure (density, per rad)")
     plt.xlabel("Initial Orientation (rad)")
@@ -112,6 +148,15 @@ def _make_plots(
     plt.tight_layout()
     plt.savefig(out_dir / "plot_should_left.png", dpi=150)
     plt.close()
+
+
+def _correct_yaw(yaw):
+    if yaw < -np.pi / 2:
+        return yaw + np.pi
+    elif yaw > np.pi / 2:
+        return yaw - np.pi
+    else:
+        return yaw
 
 
 def rollout_and_analyze(
@@ -150,13 +195,14 @@ def rollout_and_analyze(
     ds = []  # reached distance threshold
     fails = []
     turns = []  # turned optimally
+    overturns = []
     initial_yaws = []
     collected_episodes = []
 
     from d3rlpy.dataset.components import Episode
     from d3rlpy.dataset.replay_buffer import create_infinite_replay_buffer
 
-    for ep_idx in range(num_episodes):
+    for ep_idx in tqdm(range(num_episodes)):
         # Set initial yaw (Ant only)
         env_id_lower = env.unwrapped.spec.id.lower()
         if "ant" in env_id_lower:
@@ -207,6 +253,10 @@ def rollout_and_analyze(
         else:
             k = min(200, len(yaw_series))
             final_mean_yaw = float(np.mean(yaw_series[-k:]))
+
+        overturned = np.abs(final_mean_yaw - initial_yaw) > np.pi / 4
+        final_mean_yaw = _correct_yaw(final_mean_yaw)
+        initial_yaw = _correct_yaw(initial_yaw)
         turns_optimally = (final_mean_yaw * initial_yaw) >= 0.0
 
         observations = np.asarray(obs_list)
@@ -227,6 +277,7 @@ def rollout_and_analyze(
         ds.append(bool(exceeds))
         fails.append(bool(fail))
         turns.append(bool(turns_optimally))
+        overturns.append(bool(overturned))
         initial_yaws.append(float(initial_yaw))
 
     # Save replay buffer
@@ -240,12 +291,14 @@ def rollout_and_analyze(
     ds_arr = np.asarray(ds, dtype=bool)
     fails_arr = np.asarray(fails, dtype=bool)
     turns_arr = np.asarray(turns, dtype=bool)
+    overturns = np.asarray(overturns, dtype=bool)
 
     metrics = {
         "initial_yaw": xs,
         "reached_distance": ds_arr,
         "failed": fails_arr,
         "turned_optimally": turns_arr,
+        "overturned": overturns,
         "distance_threshold": float(distance_threshold),
         "env": env.unwrapped.spec.id,
         "num_episodes": int(num_episodes),
@@ -258,7 +311,16 @@ def rollout_and_analyze(
     # Save plots
     # Sort by initial yaw for cleaner plots
     order = np.argsort(xs)
-    _make_plots(xs[order], ds_arr[order], fails_arr[order], turns_arr[order], out_dir)
+    _make_plots(
+        xs[order],
+        ds_arr[order],
+        fails_arr[order],
+        turns_arr[order],
+        overturns[order],
+        out_dir,
+    )
+
+    _make_initial_yaw_dist(xs, out_dir)
 
     # Optional grid video
     if make_grid_video:
@@ -327,6 +389,7 @@ def main():
         distance_threshold=args.distance_threshold,
         deterministic=args.deterministic,
         use_ant_xml=args.use_ant_xml,
+        make_grid_video=False,
     )
 
 
