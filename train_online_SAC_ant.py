@@ -9,7 +9,7 @@ os.environ["WANDB_API_KEY"] = "0e47b265815b455d6221285fb4a25202bf52c47b"
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="Ant-v4")
+    parser.add_argument("--env", type=str, default="Ant-v5")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--no-compile", action="store_false", dest="compile")
     parser.add_argument("--use-base-env", action="store_true", 

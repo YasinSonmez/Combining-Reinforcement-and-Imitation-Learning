@@ -167,7 +167,7 @@ def rollout_and_analyze(
     distance_threshold: float = 100.0,
     deterministic: bool = True,
     use_ant_xml: bool = True,
-    make_grid_video: bool = True,
+    make_grid_video: bool = False,
     episodes_per_row: int = 10,
 ):
     policy = d3rlpy.load_learnable(policy_path)
